@@ -1,38 +1,38 @@
 from ..models.user_model import User
-from flask_login import login_user
-from ..web.forms.user_form import RegisterForm
-import datetime
-
+from ..schemas.user_schema import UserRegister
+from ..core.security import verify_password, get_password_hash, create_access_token
+from datetime import datetime
 
 class UserService:
     @staticmethod
-    def login(username: str, password: str):
-        user = User.objects(username=username).first()
-        error_msg = ""
-        if not user or not user.check_password(password):
-            error_msg = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
-
-        if user and user.status == "disactive":
-            error_msg = "บัญชีของท่านถูกลบออกจากระบบ"
-
-        if error_msg:
-            return {"error_msg": error_msg, "success": False}
-        login_user(user)
-        user.last_login_date = datetime.datetime.now()
-        user.save()
-        return {"error_msg": "", "success": True}
+    async def login(username: str, password: str) -> dict:
+        user = await User.find_one(User.username == username)
+        if not user or not verify_password(password, user.password):
+            return {"success": False, "error_msg": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"}
+        
+        if user.status == "disactive":
+            return {"success": False, "error_msg": "บัญชีของท่านถูกลบออกจากระบบ"}
+        
+        # Update login date asynchronously
+        user.last_login_date = datetime.now()
+        await user.save()
+        
+        token = create_access_token(data={"sub": user.username, "id": str(user.id)})
+        return {"success": True, "access_token": token, "user": user}
 
     @staticmethod
-    def register(form: RegisterForm):
-        username = form.username.data
-        existing_user = User.objects(username=username).first()
+    async def register(schema: UserRegister) -> dict:
+        existing_user = await User.find_one(User.username == schema.username)
         if existing_user:
             return {"success": False, "error_msg": "ชื่อผู้ใช้ซ้ำ"}
 
-        if form.password.data != form.confirm_password.data:
+        if schema.password != schema.confirm_password:
             return {"success": False, "error_msg": "รหัสผ่านไม่ตรงกัน"}
 
-        user = User(username=username)
-        user.set_password(form.password.data)
-        user.save()
-        return {"success": True, "error_msg": ""}
+        hashed_password = get_password_hash(schema.password)
+        new_user = User(
+            username=schema.username,
+            password=hashed_password
+        )
+        await new_user.insert()
+        return {"success": True, "user": new_user}
