@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     APP_TITLE: str = "TutorBooking API"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
+    GOOGLE_CLIENT_ID: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

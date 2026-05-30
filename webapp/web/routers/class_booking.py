@@ -124,6 +124,28 @@ async def timeout_booking_if_expired(booking_id: PydanticObjectId) -> bool:
     return True
 
 
+async def populate_classes_details(classes: List[Class]) -> List[ClassSchema]:
+    if not classes:
+        return []
+    
+    tutor_ids = list({c.tutorId for c in classes if c.tutorId})
+    tutors = await User.find(In(User.id, tutor_ids)).to_list()
+    tutor_map = {t.id: t.name for t in tutors}
+    
+    settings_list = await Settings.find(In(Settings.tutorId, tutor_ids)).to_list()
+    settings_map = {s.tutorId: s.name for s in settings_list}
+    
+    response_data = []
+    for c in classes:
+        class_dict = c.model_dump()
+        class_dict["id"] = c.id
+        class_dict["tutorName"] = tutor_map.get(c.tutorId)
+        class_dict["instituteName"] = settings_map.get(c.tutorId) or "TutorBooking"
+        response_data.append(ClassSchema.model_validate(class_dict))
+        
+    return response_data
+
+
 @router.get("/classes", response_model=List[ClassSchema])
 async def get_public_classes(token: Optional[str] = Depends(oauth2_scheme_optional)):
     try:
@@ -138,16 +160,18 @@ async def get_public_classes(token: Optional[str] = Depends(oauth2_scheme_option
         except:
             pass
 
+    classes = []
     if user and user.role == "student":
         # Students see only classes from tutors they follow
-        if not user.following_tutors:
-            return []
-        return await Class.find(
-            In(Class.status, ["open", "full"]), In(Class.tutorId, user.following_tutors)
-        ).to_list()
+        if user.following_tutors:
+            classes = await Class.find(
+                In(Class.status, ["open", "full"]), In(Class.tutorId, user.following_tutors)
+            ).to_list()
+    else:
+        # Guests see all active classes, including full ones so they can be shown as disabled
+        classes = await Class.find(In(Class.status, ["open", "full"])).to_list()
 
-    # Guests see all active classes, including full ones so they can be shown as disabled
-    return await Class.find(In(Class.status, ["open", "full"])).to_list()
+    return await populate_classes_details(classes)
 
 
 @router.get("/classes/me", response_model=List[ClassSchema])
@@ -162,7 +186,8 @@ async def get_my_classes(current_user: User = Depends(get_current_active_user)):
             status_code=403, detail="เฉพาะอาจารย์ผู้สอนเท่านั้นที่เข้าถึงส่วนนี้ได้"
         )
     # Tutor view: see only their own classes (any status)
-    return await Class.find(Class.tutorId == current_user.id).to_list()
+    classes = await Class.find(Class.tutorId == current_user.id).to_list()
+    return await populate_classes_details(classes)
 
 
 @router.post("/classes", response_model=ClassSchema)

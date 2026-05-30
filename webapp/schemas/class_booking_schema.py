@@ -37,6 +37,8 @@ class ClassSchema(BaseModel):
     status: str = "open"
     schedules: List[ScheduleSchema] = []
     tutorId: Optional[PyObjectId] = None
+    tutorName: Optional[str] = None
+    instituteName: Optional[str] = None
 
 def serialize_datetime(v: datetime) -> str:
     if v is None: return None

@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     
     <script>
         // Global Error Handler to catch and show errors on screen
@@ -97,8 +98,9 @@
             </button>
 
             <!-- คลิกที่รูปโปรไฟล์/Avatar เพื่อดูและอัปเดตโปรไฟล์ส่วนตัว -->
-            <div id="profile-trigger" class="avatar placeholder ml-0.5 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 hidden" onclick="app.showProfileModal()" title="โปรไฟล์ส่วนตัว">
-                <div id="user-avatar-bg" class="bg-primary text-primary-content rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft flex items-center justify-center">
+            <div id="profile-trigger" class="avatar ml-0.5 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 hidden" onclick="app.showProfileModal()" title="โปรไฟล์ส่วนตัว">
+                <div id="user-avatar-bg" class="rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft overflow-hidden flex items-center justify-center bg-primary text-primary-content">
+                    <img id="user-avatar-img" class="w-full h-full object-cover hidden" src="" alt="Google Profile" />
                     <span id="user-avatar-text" class="text-[10px] sm:text-xs">ครู</span>
                 </div>
             </div>
@@ -256,27 +258,21 @@
     <!-- Profile Edit Modal -->
     <dialog id="profile_modal" class="modal modal-bottom sm:modal-middle z-50">
         <div class="modal-box rounded-[2rem] bg-base-100 max-w-sm p-6 relative">
-            <div class="flex items-center gap-2 mb-4 text-neutral">
-                <div class="w-10 h-10 bg-info/10 rounded-full flex items-center justify-center text-info">
-                    <i data-lucide="user" class="w-5 h-5"></i>
+            <div class="flex items-center gap-3 mb-4 text-neutral">
+                <div id="modal-avatar-bg" class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-info/10 text-info">
+                    <img id="modal-avatar-img" class="w-full h-full object-cover hidden" src="" alt="Google Profile" />
+                    <i id="modal-avatar-icon" data-lucide="user" class="w-6 h-6"></i>
                 </div>
-                <h3 class="font-bold text-lg">โปรไฟล์ส่วนตัว</h3>
+                <div>
+                    <h3 class="font-bold text-lg leading-tight">โปรไฟล์ส่วนตัว</h3>
+                    <p class="text-[10px] text-neutral/40 font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-success"></span> เชื่อมต่อ Google แล้ว</p>
+                </div>
             </div>
             
             <div class="space-y-4">
                 <div class="form-control w-full">
                     <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">ชื่อจริง/ชื่อแสดงผล (Name)</span></label>
                     <input type="text" id="profile-username" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
-                </div>
-                
-                <div class="form-control w-full">
-                    <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">รหัสผ่านใหม่ (ระบุเมื่อต้องการเปลี่ยน)</span></label>
-                    <input type="password" id="profile-password" placeholder="รหัสผ่านใหม่อย่างน้อย 6 ตัวอักษร" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
-                </div>
-
-                <div class="form-control w-full">
-                    <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">ยืนยันรหัสผ่านใหม่</span></label>
-                    <input type="password" id="profile-confirm-password" placeholder="ยืนยันรหัสผ่านใหม่อีกครั้ง" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
                 </div>
             </div>
 
@@ -297,6 +293,7 @@
             isAuthenticated: false,
             authView: 'login', 
             authRole: 'student', // ค่าเริ่มต้นในหน้า Login/Register
+            googleClientId: null,
             userRole: 'student', // บทบาทจริงจาก DB
             tempEmail: undefined, // สำหรับเก็บข้อมูลพิมพ์ค้างไว้ตอนสลับโหมด
             tempPass: undefined,
@@ -310,6 +307,7 @@
             currentStudentId: null,
             currentStudentName: '',
             currentEmail: '',
+            avatarUrl: null,
             linkedTutorId: null,
             tutorSearchQuery: '',
             tutorSearchResults: [],
@@ -371,6 +369,18 @@
                 this.mobileNav = document.getElementById('mobile-nav');
                 this.desktopNav = document.getElementById('desktop-nav');
                 
+                // Fetch Auth Config (Google Client ID) from backend dynamically
+                try {
+                    const configRes = await fetch("http://127.0.0.1:8000/api/users/auth/config");
+                    if (configRes.ok) {
+                        const configData = await configRes.json();
+                        state.googleClientId = configData.google_client_id;
+                        console.log("Loaded Google Auth Client ID:", state.googleClientId);
+                    }
+                } catch (e) {
+                    console.error("Failed to load auth config from backend", e);
+                }
+                
                 this.activeUploadBookingId = null;
                 this.pendingAction = null;
                 this.pendingActionData = null;
@@ -393,6 +403,7 @@
                             state.currentStudentName = user.name || user.email;
                             state.currentStudentId = user.id || user._id;
                             state.currentEmail = user.email;
+                            state.avatarUrl = user.avatar_url;
                             state.currentUserInviteCode = user.invite_code;
                             state.linkedTutorId = user.linked_tutor_id;
                             
@@ -635,6 +646,7 @@
 
                                             const timeToOpen = this.parseDateOnly(cls.openDate) > now;
                                             const timeClosed = this.parseDateOnly(cls.closeDate) > 0 && (this.parseDateOnly(cls.closeDate) + 86399999) < now;
+                                            const totalHours = this.calculateTotalHours(cls.schedules);
 
                                             let buttonHtml = '';
                                             let cardOpacity = '';
@@ -659,20 +671,32 @@
                                                 ${isFull && !timeToOpen && !timeClosed && !myActiveBooking ? '<div class="absolute top-0 right-0 bg-error text-white text-[10px] px-3 py-1 rounded-bl-xl font-bold shadow-sm">ที่นั่งเต็ม</div>' : ''}
 
                                                 <div class="flex justify-between items-start mb-3">
-                                                    <div class="flex flex-col gap-1">
-                                                        <div class="bg-secondary/10 text-secondary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-secondary/20 flex items-center gap-1 w-max">
-                                                            <i data-lucide="users" class="w-3 h-3"></i> รับ ${cls.bookedSeats || 0}/${cls.maxSeats} คน
-                                                        </div>
-                                                        <div class="text-[10px] text-neutral/50 font-medium">ปิดรับ: ${this.displayDate(cls.closeDate)}</div>
-                                                    </div>
+                                                    <div class="flex flex-row flex-wrap items-center gap-2">
+                                                         <div class="bg-secondary/10 text-secondary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-secondary/20 flex items-center gap-1">
+                                                             <i data-lucide="users" class="w-3 h-3"></i> รับ ${cls.bookedSeats || 0}/${cls.maxSeats} คน
+                                                         </div>
+                                                         <div class="bg-brand-50 text-neutral/50 font-bold text-[10px] px-2.5 py-1 rounded-lg border border-brand-100 flex items-center gap-1">
+                                                             <i data-lucide="calendar-off" class="w-3 h-3"></i> ปิดรับ: ${this.displayDate(cls.closeDate)}
+                                                         </div>
+                                                         ${totalHours ? `
+                                                         <div class="bg-primary/10 text-primary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-primary/20 flex items-center gap-1">
+                                                             <i data-lucide="clock" class="w-3 h-3"></i> ${totalHours} ชม.
+                                                         </div>
+                                                         ` : ''}
+                                                     </div>
                                                     <div class="text-xl font-bold text-secondary bg-secondary/10 px-3 py-1 rounded-xl">฿${cls.price}</div>
                                                 </div>
 
+                                                <div class="text-xs text-primary font-bold mb-1 flex items-center gap-1">
+                                                    <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+                                                    <span>${cls.instituteName || 'TutorBooking'}</span>
+                                                    ${cls.tutorName ? `<span class="text-neutral/40 font-normal">(${cls.tutorName})</span>` : ''}
+                                                </div>
                                                 <h3 class="font-bold text-lg text-neutral mb-3 leading-tight pr-4">${cls.title}</h3>
 
                                                 <div class="bg-brand-50 rounded-xl p-3 mb-4 border border-brand-100 text-xs text-neutral/70">
                                                     <div class="flex items-center justify-between mb-2">
-                                                        <span class="font-bold text-neutral">เรียนทั้งหมด ${cls.schedules.length} ครั้ง</span>
+                                                        <span class="font-bold text-neutral">เรียนทั้งหมด ${cls.schedules.length} ครั้ง ${totalHours ? `(${totalHours} ชั่วโมง)` : ''}</span>
                                                         <span class="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-md">เริ่ม ${this.displayDate(cls.schedules[0]?.date)}</span>
                                                     </div>
                                                     <div class="space-y-1.5 pt-2 border-t border-brand-200/50 max-h-24 overflow-y-auto pr-1">
@@ -838,6 +862,101 @@
                 }
             },
 
+            initializeGoogleSignIn() {
+                if (!window.google || !state.googleClientId) {
+                    console.log("Google SDK not loaded or client ID missing");
+                    return;
+                }
+                
+                try {
+                    window.google.accounts.id.initialize({
+                        client_id: state.googleClientId,
+                        callback: async (response) => {
+                            await this.handleGoogleSignIn(response.credential);
+                        }
+                    });
+                    
+                    const container = document.getElementById("google-signin-btn-container");
+                    if (container) {
+                        const screenWidth = window.innerWidth;
+                        let btnWidth = 360; // Default width for larger screens
+                        if (screenWidth < 480) {
+                            // Scale down button width dynamically, ensuring it fits inside the card padding
+                            btnWidth = Math.min(360, Math.max(200, screenWidth - 80));
+                        }
+                        window.google.accounts.id.renderButton(
+                            container,
+                            { theme: "outline", size: "large", width: btnWidth.toString(), shape: "pill" }
+                        );
+                    }
+                } catch (err) {
+                    console.error("Google Sign-In initialization failed:", err);
+                }
+            },
+
+            async handleGoogleSignIn(idToken) {
+                try {
+                    const response = await fetch("http://127.0.0.1:8000/api/users/login/google", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            id_token: idToken,
+                            role: state.currentRole
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json();
+                        this.showToast(err.detail || 'การยืนยันตัวตนผ่าน Google ล้มเหลว', 'error');
+                        return;
+                    }
+
+                    const data = await response.json();
+                    localStorage.setItem("access_token", data.access_token);
+
+                    const meResponse = await fetch("http://127.0.0.1:8000/api/users/me", {
+                        headers: { "Authorization": `Bearer ${data.access_token}` }
+                    });
+
+                    if (meResponse.ok) {
+                        const user = await meResponse.json();
+                        state.isAuthenticated = true;
+                        state.userRole = user.role || state.currentRole;
+                        state.currentRole = user.role || state.currentRole;
+                        state.currentStudentName = user.name || user.email;
+                        state.currentStudentId = user.id || user._id;
+                        state.currentEmail = user.email;
+                        state.avatarUrl = user.avatar_url;
+                        state.currentUserInviteCode = user.invite_code;
+                        state.linkedTutorId = user.linked_tutor_id;
+                        state.subscription = {
+                            plan: user.subscription_plan || 'ทดลองใช้ฟรี',
+                            daysLeft: user.subscription_days_left !== undefined ? user.subscription_days_left : 14
+                        };
+                        state.currentTab = state.currentRole === 'admin' ? 'overview' : 'browse';
+
+                        await Promise.all([
+                            this.fetchClasses(),
+                            this.fetchMyBookings(),
+                            this.fetchSettings(),
+                            this.fetchAttendance(),
+                            this.fetchNetwork()
+                        ]);
+
+                        this.render();
+                        const roleSelector = document.getElementById('role-selector');
+                        if (roleSelector) roleSelector.value = state.currentRole;
+                        this.updateAvatar(state.currentRole);
+                        this.showToast(`เข้าสู่ระบบผ่าน Google สำเร็จ ยินดีต้อนรับ!`, 'success');
+                    } else {
+                        localStorage.removeItem("access_token");
+                        this.showToast('ดึงข้อมูลโปรไฟล์ Google ล้มเหลว', 'error');
+                    }
+                } catch (e) {
+                    this.showToast('เชื่อมต่อเซิร์ฟเวอร์หลังบ้านล้มเหลว', 'error');
+                }
+            },
+
             logout() {
                 localStorage.removeItem("access_token");
                 state.isAuthenticated = false;
@@ -847,6 +966,7 @@
                 state.currentStudentId = null;
                 state.currentStudentName = '';
                 state.currentEmail = '';
+                state.avatarUrl = null;
                 state.currentUserInviteCode = '';
                 state.linkedTutorId = null;
                 this.resetSessionData();
@@ -1118,6 +1238,7 @@
                         state.currentStudentName = user.name;
                         state.currentStudentId = user.id || user._id;
                         state.currentEmail = user.email;
+                        state.avatarUrl = user.avatar_url;
                         state.linkedTutorId = user.linked_tutor_id;
                         state.currentUserInviteCode = user.invite_code;
                         this.resetSessionData();
@@ -1152,14 +1273,27 @@
             updateAvatar(role) {
                 const avatarBg = document.getElementById('user-avatar-bg');
                 const avatarText = document.getElementById('user-avatar-text');
+                const avatarImg = document.getElementById('user-avatar-img');
                 if (!avatarBg || !avatarText) return;
 
-                if (role === 'admin') {
-                    avatarBg.className = 'bg-primary text-primary-content rounded-full w-9 shadow-soft flex items-center justify-center';
-                    avatarText.innerText = 'ครู';
+                if (state.avatarUrl) {
+                    if (avatarImg) {
+                        avatarImg.src = state.avatarUrl;
+                        avatarImg.classList.remove('hidden');
+                    }
+                    avatarText.classList.add('hidden');
                 } else {
-                    avatarBg.className = 'bg-secondary text-secondary-content rounded-full w-9 shadow-soft flex items-center justify-center';
-                    avatarText.innerText = 'น.ร.';
+                    if (avatarImg) {
+                        avatarImg.classList.add('hidden');
+                    }
+                    avatarText.classList.remove('hidden');
+                    if (role === 'admin') {
+                        avatarBg.className = 'bg-primary text-primary-content rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft flex items-center justify-center';
+                        avatarText.innerText = 'ครู';
+                    } else {
+                        avatarBg.className = 'bg-secondary text-secondary-content rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft flex items-center justify-center';
+                        avatarText.innerText = 'น.ร.';
+                    }
                 }
             },
 
@@ -1213,6 +1347,9 @@
 
                         this.contentDiv.innerHTML = `<div class="animate-fade-in w-full">${html || ''}</div>`;
                         if (window.lucide) lucide.createIcons({ root: this.contentDiv });
+                        if (!state.isAuthenticated) {
+                            setTimeout(() => this.initializeGoogleSignIn(), 50);
+                        }
                     }
                 } catch (e) {
                     console.error("Render Error:", e);
@@ -1335,9 +1472,6 @@
                 const cTheme = isStudent ? 'secondary' : 'primary';
                 const cBgLight = isStudent ? 'bg-secondary/10' : 'bg-primary/10';
                 const cText = isStudent ? 'text-secondary' : 'text-primary';
-                
-                const emailVal = state.tempEmail !== undefined ? state.tempEmail : 'demo@tutorbooking.com';
-                const passVal = state.tempPass !== undefined ? state.tempPass : 'password';
 
                 return `
                     <div class="max-w-md w-full mx-auto bg-white p-8 sm:p-10 rounded-[2.5rem] shadow-card border border-brand-100 mt-4 sm:mt-10 relative overflow-hidden transition-all duration-300">
@@ -1369,24 +1503,14 @@
                                 </label>
                             </div>
                             
-                            <div class="space-y-4">
-                                <div class="form-control">
-                                    <label class="label pt-0"><span class="label-text font-bold text-neutral/70">อีเมล</span></label>
-                                    <div class="relative">
-                                        <i data-lucide="mail" class="w-5 h-5 absolute left-4 top-3.5 text-neutral/40"></i>
-                                        <input type="email" id="auth-email" class="input input-bordered w-full bg-brand-50 border-brand-100 rounded-2xl pl-12 h-12 focus:border-${cTheme} focus:ring-1 focus:ring-${cTheme} transition-colors" placeholder="your@email.com" value="${emailVal}" />
-                                    </div>
+                            <div class="space-y-4 bg-brand-50/50 p-5 rounded-2xl border border-brand-100 text-center text-xs sm:text-sm text-neutral/70">
+                                <div class="w-10 h-10 bg-${cTheme}/10 ${cText} rounded-full flex items-center justify-center mx-auto mb-1 animate-pulse">
+                                    <i data-lucide="shield-check" class="w-5 h-5"></i>
                                 </div>
-                                <div class="form-control">
-                                    <label class="label pt-0"><span class="label-text font-bold text-neutral/70">รหัสผ่าน</span></label>
-                                    <div class="relative">
-                                        <i data-lucide="key" class="w-5 h-5 absolute left-4 top-3.5 text-neutral/40"></i>
-                                        <input type="password" id="auth-pass" class="input input-bordered w-full bg-brand-50 border-brand-100 rounded-2xl pl-12 h-12 focus:border-${cTheme} focus:ring-1 focus:ring-${cTheme} transition-colors" placeholder="••••••••" value="${passVal}" />
-                                    </div>
-                                    <div class="text-right mt-2"><a href="#" class="text-xs text-${cTheme} font-bold hover:underline transition-colors">ลืมรหัสผ่าน?</a></div>
-                                </div>
-                                <button onclick="app.login()" class="btn btn-${cTheme} w-full rounded-2xl text-white shadow-soft font-bold text-lg mt-6 h-14 border-none hover:scale-[1.02] transition-all">เข้าสู่ระบบ</button>
+                                <p class="leading-relaxed">เพื่อความปลอดภัยและสิทธิ์การเข้าใช้งานที่ถูกต้อง กรุณาเข้าสู่ระบบผ่าน <b>บัญชี Google ยืนยันตัวตนจริง</b></p>
                             </div>
+                            
+                            <div id="google-signin-btn-container" class="mt-6 flex justify-center w-full min-h-[44px]"></div>
                             
                             <div class="text-center mt-8 pt-6 border-t border-brand-100">
                                 <p class="text-sm text-neutral/60 font-medium">ยังไม่มีบัญชี? <button onclick="app.switchAuthView('register')" class="text-${cTheme} font-bold hover:underline ml-1 transition-colors">สมัครสมาชิก</button></p>
@@ -1436,31 +1560,14 @@
                                 </label>
                             </div>
                             
-                            <div class="space-y-4">
-                                <div class="form-control">
-                                    <label class="label pt-0"><span class="label-text font-bold text-neutral/70">ชื่อ - นามสกุล / ชื่อสถาบัน</span></label>
-                                    <div class="relative">
-                                        <i data-lucide="user" class="w-5 h-5 absolute left-4 top-3.5 text-neutral/40"></i>
-                                        <input type="text" id="auth-name" class="input input-bordered w-full bg-brand-50 border-brand-100 rounded-2xl pl-12 h-12 focus:border-${cTheme} focus:ring-1 focus:ring-${cTheme} transition-colors" placeholder="ระบุชื่อที่ต้องการใช้งาน" value="${nameVal}" />
-                                    </div>
+                            <div class="space-y-4 bg-brand-50/50 p-5 rounded-2xl border border-brand-100 text-center text-xs sm:text-sm text-neutral/70">
+                                <div class="w-10 h-10 bg-secondary/10 text-secondary rounded-full flex items-center justify-center mx-auto mb-1 animate-pulse">
+                                    <i data-lucide="shield-check" class="w-5 h-5"></i>
                                 </div>
-                                <div class="form-control">
-                                    <label class="label pt-0"><span class="label-text font-bold text-neutral/70">อีเมล</span></label>
-                                    <div class="relative">
-                                        <i data-lucide="mail" class="w-5 h-5 absolute left-4 top-3.5 text-neutral/40"></i>
-                                        <input type="email" id="auth-email" class="input input-bordered w-full bg-brand-50 border-brand-100 rounded-2xl pl-12 h-12 focus:border-${cTheme} focus:ring-1 focus:ring-${cTheme} transition-colors" placeholder="your@email.com" value="${emailVal}" />
-                                    </div>
-                                </div>
-                                <div class="form-control">
-                                    <label class="label pt-0"><span class="label-text font-bold text-neutral/70">รหัสผ่าน</span></label>
-                                    <div class="relative">
-                                        <i data-lucide="key" class="w-5 h-5 absolute left-4 top-3.5 text-neutral/40"></i>
-                                        <input type="password" id="auth-pass" class="input input-bordered w-full bg-brand-50 border-brand-100 rounded-2xl pl-12 h-12 focus:border-${cTheme} focus:ring-1 focus:ring-${cTheme} transition-colors" placeholder="ตั้งรหัสผ่านอย่างน้อย 8 ตัวอักษร" value="${passVal}" />
-                                    </div>
-                                </div>
-                                
-                                <button onclick="app.register()" class="btn btn-${cTheme} w-full rounded-2xl text-white shadow-soft font-bold text-lg mt-6 h-14 border-none hover:scale-[1.02] transition-all">สมัครสมาชิก</button>
+                                <p class="leading-relaxed">เพื่อความปลอดภัยและป้องกันบัญชีปลอม ระบบเปิดรับการลงทะเบียนผ่าน <b>บัญชี Google ยืนยันตัวตนจริง เท่านั้น</b></p>
                             </div>
+                            
+                            <div id="google-signin-btn-container" class="mt-6 flex justify-center w-full min-h-[44px]"></div>
                             
                             <div class="text-center mt-8 pt-6 border-t border-brand-100">
                                 <p class="text-sm text-neutral/60 font-medium">มีบัญชีอยู่แล้ว? <button onclick="app.switchAuthView('login')" class="text-${cTheme} font-bold hover:underline ml-1 transition-colors">เข้าสู่ระบบ</button></p>
@@ -2259,6 +2366,24 @@
                                             
                                             const timeToOpen = this.parseDateOnly(cls.openDate) > now;
                                             const timeClosed = this.parseDateOnly(cls.closeDate) > 0 && (this.parseDateOnly(cls.closeDate) + 86399999) < now;
+                                            const totalHours = this.calculateTotalHours(cls.schedules);
+
+                                            const closeDateTime = this.parseDateOnly(cls.closeDate) + 86399999;
+                                            const timeLeftMs = closeDateTime - now;
+                                            let timeLeftStr = '';
+                                            if (timeLeftMs > 0 && !timeClosed && !timeToOpen) {
+                                                const daysLeft = Math.floor(timeLeftMs / (1000 * 60 * 60 * 24));
+                                                if (daysLeft > 0) {
+                                                    timeLeftStr = `เหลืออีก ${daysLeft} วัน`;
+                                                } else {
+                                                    const hoursLeft = Math.floor(timeLeftMs / (1000 * 60 * 60));
+                                                    if (hoursLeft > 0) {
+                                                        timeLeftStr = `เหลืออีก ${hoursLeft} ชม.`;
+                                                    } else {
+                                                        timeLeftStr = `เหลือไม่ถึง 1 ชม.`;
+                                                    }
+                                                }
+                                            }
 
                                             let buttonHtml = '';
                                             let cardOpacity = '';
@@ -2282,12 +2407,30 @@
                                             <div class="bg-white rounded-[2rem] p-5 border border-brand-100 shadow-card relative overflow-hidden transition-transform active:scale-[0.98] ${cardOpacity}">
                                                 ${isFull && !timeToOpen && !timeClosed && !myActiveBooking ? '<div class="absolute top-0 right-0 bg-error text-white text-[10px] px-3 py-1 rounded-bl-xl font-bold shadow-sm">ที่นั่งเต็ม</div>' : ''}
                                                 
-                                                <div class="flex justify-between items-start mb-3">
-                                                    <div class="flex flex-col gap-1">
-                                                        <div class="bg-secondary/10 text-secondary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-secondary/20 flex items-center gap-1 w-max">
+                                                <div class="text-xs text-primary font-bold mb-3 flex items-center gap-1">
+                                                    <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+                                                    <span>${cls.instituteName || 'TutorBooking'}</span>
+                                                    ${cls.tutorName ? `<span class="text-neutral/40 font-normal">(${cls.tutorName})</span>` : ''}
+                                                </div>
+
+                                                <div class="flex justify-between items-start mb-1.5">
+                                                    <div class="flex flex-row flex-wrap items-center gap-2">
+                                                        <div class="bg-secondary/10 text-secondary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-secondary/20 flex items-center gap-1">
                                                             <i data-lucide="users" class="w-3 h-3"></i> รับ ${cls.bookedSeats || 0}/${cls.maxSeats} คน
                                                         </div>
-                                                        <div class="text-[10px] text-neutral/50 font-medium">ปิดรับ: ${this.displayDate(cls.closeDate)}</div>
+                                                        <div class="bg-brand-50 text-neutral/50 font-bold text-[10px] px-2.5 py-1 rounded-lg border border-brand-100 flex items-center gap-1">
+                                                            <i data-lucide="calendar-off" class="w-3 h-3"></i> ปิดรับ: ${this.displayDate(cls.closeDate)}
+                                                        </div>
+                                                        ${totalHours ? `
+                                                        <div class="bg-primary/10 text-primary font-bold text-[10px] px-2.5 py-1 rounded-lg border border-primary/20 flex items-center gap-1">
+                                                            <i data-lucide="clock" class="w-3 h-3"></i> ${totalHours} ชม.
+                                                        </div>
+                                                        ` : ''}
+                                                        ${timeLeftStr ? `
+                                                        <div class="bg-error/10 text-error font-extrabold text-[10px] px-2.5 py-1 rounded-lg border border-error/20 flex items-center gap-1 animate-pulse">
+                                                            <i data-lucide="hourglass" class="w-3 h-3"></i> ${timeLeftStr}
+                                                        </div>
+                                                        ` : ''}
                                                     </div>
                                                     <div class="text-xl font-bold text-secondary bg-secondary/10 px-3 py-1 rounded-xl">฿${cls.price}</div>
                                                 </div>
@@ -2296,7 +2439,7 @@
                                                 
                                                 <div class="bg-brand-50 rounded-xl p-3 mb-4 border border-brand-100 text-xs text-neutral/70">
                                                     <div class="flex items-center justify-between mb-2">
-                                                        <span class="font-bold text-neutral">เรียนทั้งหมด ${cls.schedules.length} ครั้ง</span>
+                                                        <span class="font-bold text-neutral">เรียนทั้งหมด ${cls.schedules.length} ครั้ง ${totalHours ? `(${totalHours} ชั่วโมง)` : ''}</span>
                                                         <span class="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-md">เริ่ม ${this.displayDate(cls.schedules[0]?.date)}</span>
                                                     </div>
                                                     <div class="space-y-1.5 pt-2 border-t border-brand-200/50 max-h-24 overflow-y-auto pr-1">
@@ -2364,6 +2507,7 @@
                                     const cls = state.classes.find(c => c.id === booking.classId);
                                     if (!cls) return '';
                                     const isExpiredPending = this.isBookingExpired(booking, cls);
+                                    const totalHours = this.calculateTotalHours(cls.schedules);
 
                                     let borderClass = 'border-warning shadow-soft';
                                     let timerBadgeHtml = '';
@@ -2475,11 +2619,16 @@
                                     <div class="bg-white rounded-[2rem] p-5 border-2 ${borderClass} relative overflow-hidden transition-all duration-300" data-booking-id="${booking.id}">
                                         ${timerBadgeHtml}
                                         
+                                        <div class="text-xs text-primary font-bold mb-3 flex items-center gap-1">
+                                            <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+                                            <span>${cls.instituteName || 'TutorBooking'}</span>
+                                            ${cls.tutorName ? `<span class="text-neutral/40 font-normal">(${cls.tutorName})</span>` : ''}
+                                        </div>
                                         <h3 class="font-bold text-neutral text-lg pr-24 leading-tight">${cls.title}</h3>
                                         ${statusInfoHtml}
                                         
                                         <div class="bg-brand-50 rounded-xl p-3 mt-4 border border-brand-100 text-xs text-neutral/70">
-                                            <div class="font-bold text-neutral mb-1">คอร์สเรียน ${cls.schedules.length} ครั้ง</div>
+                                            <div class="font-bold text-neutral mb-1">คอร์สเรียน ${cls.schedules.length} ครั้ง ${totalHours ? `(${totalHours} ชั่วโมง)` : ''}</div>
                                             <div class="text-[10px]">เริ่มคลาสแรก: ${this.displayDate(cls.schedules[0]?.date)} (${cls.schedules[0]?.time})</div>
                                         </div>
                                         
@@ -2560,6 +2709,11 @@
                                                         <div class="text-[11px] font-bold text-secondary mb-0.5 flex items-center gap-2">
                                                             เวลา ${sch.schTime} 
                                                             <span class="text-neutral/40 px-1.5 bg-brand-50 rounded text-[9px]">ครั้งที่ ${sch.schIndex+1}/${sch.schedules.length}</span>
+                                                        </div>
+                                                        <div class="text-[10px] text-primary font-bold mb-0.5 flex items-center gap-1">
+                                                            <i data-lucide="graduation-cap" class="w-3 h-3"></i>
+                                                            <span>${sch.instituteName || 'TutorBooking'}</span>
+                                                            ${sch.tutorName ? `<span class="text-neutral/40 font-normal">(${sch.tutorName})</span>` : ''}
                                                         </div>
                                                         <h3 class="font-bold text-neutral text-sm leading-tight">${sch.title}</h3>
                                                     </div>
@@ -3376,15 +3530,31 @@
             showProfileModal() {
                 if (!state.isAuthenticated) return;
                 document.getElementById('profile-username').value = state.currentStudentName;
-                document.getElementById('profile-password').value = '';
-                document.getElementById('profile-confirm-password').value = '';
+                const modalImg = document.getElementById('modal-avatar-img');
+                const modalIcon = document.getElementById('modal-avatar-icon');
+                if (state.avatarUrl) {
+                    if (modalImg) {
+                        modalImg.src = state.avatarUrl;
+                        modalImg.classList.remove('hidden');
+                    }
+                    if (modalIcon) modalIcon.classList.add('hidden');
+                } else {
+                    if (modalImg) modalImg.classList.add('hidden');
+                    if (modalIcon) modalIcon.classList.remove('hidden');
+                }
+                const pEl = document.getElementById('profile-password');
+                const cpEl = document.getElementById('profile-confirm-password');
+                if (pEl) pEl.value = '';
+                if (cpEl) cpEl.value = '';
                 document.getElementById('profile_modal').showModal();
             },
 
             async saveProfile() {
                 const name = document.getElementById('profile-username').value.trim();
-                const password = document.getElementById('profile-password').value;
-                const confirmPassword = document.getElementById('profile-confirm-password').value;
+                const pEl = document.getElementById('profile-password');
+                const cpEl = document.getElementById('profile-confirm-password');
+                const password = pEl ? pEl.value : '';
+                const confirmPassword = cpEl ? cpEl.value : '';
 
                 if (!name) {
                     this.showToast('กรุณากรอกชื่อผู้ใช้งาน', 'error');
@@ -3419,10 +3589,12 @@
                     if (response.ok) {
                         const user = await response.json();
                         state.currentStudentName = user.name || user.email;
+                        state.avatarUrl = user.avatar_url;
                         
                         this.showToast('บันทึกการแก้ไขโปรไฟล์สำเร็จ', 'success');
                         document.getElementById('profile_modal').close();
                         this.render();
+                        this.updateAvatar(state.currentRole);
                     } else {
                         const err = await response.json();
                         this.showToast(err.detail || 'การแก้ไขโปรไฟล์ล้มเหลว', 'error');
@@ -3430,6 +3602,27 @@
                 } catch (e) {
                     this.showToast('เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว', 'error');
                 }
+            },
+
+            calculateTotalHours(schedules) {
+                if (!schedules || schedules.length === 0) return 0;
+                let totalMin = 0;
+                schedules.forEach(sch => {
+                    if (!sch.time || !sch.time.includes(' - ')) return;
+                    const parts = sch.time.split(' - ');
+                    if (parts.length !== 2) return;
+                    const startParts = parts[0].split(':');
+                    const endParts = parts[1].split(':');
+                    if (startParts.length !== 2 || endParts.length !== 2) return;
+                    const startMinutes = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
+                    const endMinutes = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
+                    if (endMinutes > startMinutes) {
+                        totalMin += (endMinutes - startMinutes);
+                    }
+                });
+                if (totalMin <= 0) return 0;
+                const hours = totalMin / 60;
+                return Number(hours.toFixed(2));
             },
 
             displayDate(isoStr) {

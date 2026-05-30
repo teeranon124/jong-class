@@ -36,6 +36,7 @@ class UserResponse(BaseModel):
     subscription_plan: str
     subscription_days_left: int
     linked_tutor_id: Optional[PyObjectId] = None
+    avatar_url: Optional[str] = None
     invite_code: Optional[str] = None
     following_tutors: List[PyObjectId] = []
 

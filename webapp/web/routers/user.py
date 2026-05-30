@@ -23,6 +23,81 @@ from beanie.operators import In
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+from ...core.config import settings
+import httpx
+import random
+import string
+
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+    role: str = "student"
+
+
+@router.get("/auth/config")
+async def get_auth_config():
+    return {"google_client_id": settings.GOOGLE_CLIENT_ID}
+
+
+@router.post("/login/google", response_model=Token)
+async def login_google(payload: GoogleLoginRequest):
+    # 1. Validate ID token with Google API
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.id_token}"
+        )
+        if res.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Google Token ไม่ถูกต้อง หรือหมดอายุ",
+            )
+        id_info = res.json()
+
+    email = id_info.get("email")
+    name = id_info.get("name")
+    picture = id_info.get("picture")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ไม่พบอีเมลในบัญชี Google",
+        )
+
+    # 2. Query/Register user
+    user = await User.find_one(User.email == email)
+    if not user:
+        # Generate random password (unused since they log in via Google)
+        random_pass = "".join(
+            random.choices(string.ascii_letters + string.digits, k=16)
+        )
+        user = User(
+            email=email,
+            password=get_password_hash(random_pass),
+            role=payload.role,
+            name=name or email,
+            status="active",
+            avatar_url=picture,
+        )
+        await user.insert()
+    else:
+        if user.status == "disactive":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="บัญชีนี้ถูกระงับการใช้งาน",
+            )
+        # Update name and avatar if they changed on Google
+        user.name = name or user.name
+        if picture:
+            user.avatar_url = picture
+        await user.save()
+
+    # 3. Issue native JWT
+    access_token = create_access_token(
+        data={"sub": user.email, "id": str(user.id)}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
 @router.post("/follow")
 async def follow_tutor(
     payload: FollowRequest, current_user: User = Depends(get_current_active_user)
@@ -285,12 +360,16 @@ async def switch_identity(current_user: User = Depends(get_current_active_user))
 
         if not target_user:
             # Create new linked student account
+            random_pass = "".join(
+                random.choices(string.ascii_letters + string.digits, k=32)
+            )
             target_user = User(
                 email=target_email,
-                password=get_password_hash("auto_generated"),
+                password=get_password_hash(random_pass),
                 role="student",
                 name=f"{current_user.name} (นักเรียน)",
                 linked_tutor_id=current_user.id,
+                avatar_url=current_user.avatar_url,
             )
             await target_user.insert()
 
@@ -323,6 +402,11 @@ async def switch_identity(current_user: User = Depends(get_current_active_user))
                 status_code=400, detail="บัญชีนี้ไม่ได้เชื่อมโยงระบบสลับตัวตนอัตโนมัติ"
             )
 
+    # Keep avatar synced between linked accounts
+    if target_user and current_user.avatar_url and target_user.avatar_url != current_user.avatar_url:
+        target_user.avatar_url = current_user.avatar_url
+        await target_user.save()
+
     # Issue new token
     access_token = create_access_token(
         data={"sub": target_user.email, "id": str(target_user.id)}
@@ -336,12 +420,10 @@ async def switch_identity(current_user: User = Depends(get_current_active_user))
 
 @router.post("/register", response_model=UserResponse)
 async def register(payload: UserRegister):
-    result = await UserService.register(payload)
-    if not result["success"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=result["error_msg"]
-        )
-    return result["user"]
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="ระบบยกเลิกการสมัครสมาชิกแบบกรอกอีเมลธรรมดา กรุณาสมัครผ่าน Google เพื่อยืนยันตัวตนจริง"
+    )
 
 
 @router.post("/login", response_model=Token)

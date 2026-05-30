@@ -11,6 +11,7 @@ try:
     from webapp.models.class_model import Class
     from webapp.models.booking_model import Booking
     from webapp.core.config import settings
+    from webapp.core.security import get_password_hash
 except ImportError as e:
     print(f"Error importing webapp modules: {e}")
     print("Please run this script from the workspace root where webapp is located.")
@@ -131,26 +132,24 @@ async def test_integration():
     await Booking.find(Booking.studentName == test_email).delete()
     print_info(f"Removed any pre-existing test bookings for '{test_email}'.")
 
-    # Step 3: Register a new student via REST API
-    await run_step("3", "Testing User Registration (POST /api/users/register)", 
-                   "Simulating a new student signing up from the register form in frontend UI.")
+    # Step 3: Register a new student via direct MongoDB insertion
+    await run_step("3", "Testing User Registration (Direct MongoDB Insertion)", 
+                   "Manual registration API is disabled to enforce Google Sign-in. Simulating direct creation of active student.")
     
-    register_payload = {
-        "email": test_email,
-        "password": test_password,
-        "confirm_password": test_password
-    }
-    
-    res = await http_client.post(f"{backend_url}/api/users/register", json=register_payload)
-    if res.status_code == 200:
-        res_data = res.json()
-        print_ok("Registration API call successful (200 OK)")
-        print(f"    Returned User: {res_data}")
-        assert res_data["email"] == test_email
-        assert "id" in res_data
-        test_user_id = res_data["id"]
-    else:
-        print_fail(f"Registration failed: {res.status_code} - {res.text}")
+    try:
+        new_user = User(
+            email=test_email,
+            password=get_password_hash(test_password),
+            role="student",
+            name="Integration Test Student",
+            status="active"
+        )
+        await new_user.insert()
+        print_ok("Direct database student registration successful")
+        print(f"    Registered User ID: {new_user.id}")
+        test_user_id = new_user.id
+    except Exception as e:
+        print_fail(f"Direct registration failed: {e}")
         sys.exit(1)
 
     # Step 4: Login with newly registered student
