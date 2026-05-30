@@ -9,3 +9,8 @@ class Attendance(Document):
 
     class Settings:
         name = "attendance"
+        indexes = [
+            "classId",
+            "studentId",
+            ["classId", "schIndex", "studentId"]
+        ]

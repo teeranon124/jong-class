@@ -40,15 +40,28 @@ async def reject_expired_pending_bookings() -> int:
     Returns the number of bookings that were updated.
     """
     pending_bookings = await Booking.find(Booking.status == "pending").to_list()
+    if not pending_bookings:
+        return 0
+
     now_utc = datetime.now(timezone.utc)
     updated_count = 0
 
+    # 1. Batch fetch classes to prevent N+1 Queries
+    class_ids = list({b.classId for b in pending_bookings})
+    classes = await Class.find(In(Class.id, class_ids)).to_list()
+    class_map = {c.id: c for c in classes}
+
+    # 2. Batch fetch settings to prevent N+1 Queries
+    tutor_ids = list({c.tutorId for c in classes if c.tutorId})
+    tutor_settings = await Settings.find(In(Settings.tutorId, tutor_ids)).to_list()
+    settings_map = {s.tutorId: s for s in tutor_settings}
+
     for b in pending_bookings:
-        cls = await Class.find_one(Class.id == b.classId)
+        cls = class_map.get(b.classId)
         if not cls:
             continue
 
-        t_settings = await Settings.find_one(Settings.tutorId == cls.tutorId)
+        t_settings = settings_map.get(cls.tutorId)
         timeout_mins = t_settings.payment_timeout_minutes if t_settings else 5
         expiry_time = normalize_utc(b.created_date) + timedelta(minutes=timeout_mins)
 
@@ -58,11 +71,18 @@ async def reject_expired_pending_bookings() -> int:
             await b.save()
             updated_count += 1
 
-            if cls.bookedSeats > 0:
-                cls.bookedSeats -= 1
-                if cls.bookedSeats < cls.maxSeats:
-                    cls.status = "open"
-                await cls.save()
+            # Decrement seats atomically in the database to prevent Race Conditions
+            updated_cls = await Class.find_one(
+                Class.id == cls.id,
+                Class.bookedSeats > 0
+            ).update({"$inc": {Class.bookedSeats: -1}})
+
+            if updated_cls and updated_cls.modified_count > 0:
+                # Reload class to check and sync status safely
+                cls_to_sync = await Class.get(cls.id)
+                if cls_to_sync and cls_to_sync.bookedSeats < cls_to_sync.maxSeats and cls_to_sync.status != "open":
+                    cls_to_sync.status = "open"
+                    await cls_to_sync.save()
 
     return updated_count
 
@@ -88,11 +108,18 @@ async def timeout_booking_if_expired(booking_id: PydanticObjectId) -> bool:
     booking.updated_date = now_utc
     await booking.save()
 
-    if cls.bookedSeats > 0:
-        cls.bookedSeats -= 1
-        if cls.bookedSeats < cls.maxSeats:
-            cls.status = "open"
-        await cls.save()
+    # Decrement seats atomically in the database to prevent Race Conditions
+    updated_cls = await Class.find_one(
+        Class.id == cls.id,
+        Class.bookedSeats > 0
+    ).update({"$inc": {Class.bookedSeats: -1}})
+
+    if updated_cls and updated_cls.modified_count > 0:
+        # Reload class to check and sync status safely
+        cls_to_sync = await Class.get(cls.id)
+        if cls_to_sync and cls_to_sync.bookedSeats < cls_to_sync.maxSeats and cls_to_sync.status != "open":
+            cls_to_sync.status = "open"
+            await cls_to_sync.save()
 
     return True
 
@@ -241,9 +268,10 @@ async def create_booking(
 
     # Security: Ensure students can only book for themselves
     if current_user.role != "student" and not current_user.email.startswith("student_"):
-        # Tutors shouldn't book classes (unless it's their shadow account)
-        # Actually, let's just check the ID to be safe
-        pass
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="เฉพาะนักเรียนเท่านั้นที่เข้าจองคอร์สเรียนได้"
+        )
 
     # 1. Check for duplicate active bookings
     existing = await Booking.find_one(
@@ -256,18 +284,27 @@ async def create_booking(
             status_code=400, detail="คุณได้จองคอร์สนี้ไปแล้ว และรายการยังคงมีผลอยู่"
         )
 
-    # 2. Check class existence and capacity
-    cls = await Class.find_one(Class.id == PydanticObjectId(payload.classId))
+    # 2. Check class existence
+    class_id = PydanticObjectId(payload.classId)
+    cls = await Class.find_one(Class.id == class_id)
     if not cls:
         raise HTTPException(status_code=404, detail="ไม่พบคอร์สเรียน")
-    if cls.bookedSeats >= cls.maxSeats:
+
+    # 3. Update seats atomically (TOCTOU / Race Condition resolution)
+    # Increment bookedSeats by 1 only if bookedSeats < maxSeats
+    updated_cls = await Class.find_one(
+        Class.id == class_id,
+        {"$expr": {"$lt": ["$bookedSeats", "$maxSeats"]}}
+    ).update({"$inc": {Class.bookedSeats: 1}})
+
+    if not updated_cls or updated_cls.modified_count == 0:
         raise HTTPException(status_code=400, detail="คอร์สนี้เต็มแล้ว")
 
-    # 3. Update seats
-    cls.bookedSeats += 1
-    if cls.bookedSeats >= cls.maxSeats:
+    # Sync class status to 'full' safely if it reached capacity
+    cls = await Class.get(class_id)
+    if cls and cls.bookedSeats >= cls.maxSeats and cls.status != "full":
         cls.status = "full"
-    await cls.save()
+        await cls.save()
 
     # 4. Create booking using correct IDs
     new_booking = Booking(

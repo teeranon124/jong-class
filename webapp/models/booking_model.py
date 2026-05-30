@@ -14,3 +14,8 @@ class Booking(Document):
 
     class Settings:
         name = "bookings"
+        indexes = [
+            "classId",
+            "studentId",
+            "status"
+        ]

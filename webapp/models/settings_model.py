@@ -13,3 +13,6 @@ class Settings(Document):
 
     class Settings:
         name = "settings"
+        indexes = [
+            "tutorId"
+        ]

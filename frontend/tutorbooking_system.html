@@ -1119,6 +1119,7 @@
                         state.currentStudentId = user.id || user._id;
                         state.currentEmail = user.email;
                         state.linkedTutorId = user.linked_tutor_id;
+                        state.currentUserInviteCode = user.invite_code;
                         this.resetSessionData();
                         state.subscription = {
                             plan: user.subscription_plan || 'ทดลองใช้ฟรี',

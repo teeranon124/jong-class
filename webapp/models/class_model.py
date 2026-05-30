@@ -20,3 +20,8 @@ class Class(Document):
 
     class Settings:
         name = "classes"
+        indexes = [
+            "status",
+            "tutorId",
+            "openDate"
+        ]
