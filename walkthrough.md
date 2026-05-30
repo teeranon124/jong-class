@@ -52,11 +52,11 @@ To run the server, use poetry to trigger the configured script:
 ```bash
 poetry run run-web
 ```
-Uvicorn will start and listen on: `http://127.0.0.1:8080`.
+Uvicorn will start and listen on: `http://127.0.0.1:8000`.
 
 ### 2. Interactive Swagger Documentation
 Navigate to:
-👉 **[http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs)**
+👉 **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)**
 
 FastAPI automatically generates an interactive Swagger UI. You can test your endpoints here:
 - **POST `/api/users/register`**: Submit username/password to register.
@@ -72,7 +72,7 @@ For your `tutorbooking_system.html` (which can be hosted on Vercel or locally), 
 ### Login & Store Token:
 ```javascript
 async function loginUser(username, password) {
-  const response = await fetch("http://127.0.0.1:8080/api/users/login", {
+  const response = await fetch("http://127.0.0.1:8000/api/users/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
@@ -99,7 +99,7 @@ async function fetchProtectedData() {
     return;
   }
 
-  const response = await fetch("http://127.0.0.1:8080/api/users/me", {
+  const response = await fetch("http://127.0.0.1:8000/api/users/me", {
     method: "GET",
     headers: {
       "Authorization": `Bearer ${token}`
