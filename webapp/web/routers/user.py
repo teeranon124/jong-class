@@ -154,6 +154,32 @@ async def reject_follower(
     raise HTTPException(status_code=404, detail="ไม่พบคำขอติดตามนี้")
 
 
+@router.post("/remove-follower")
+async def remove_follower(
+    payload: FollowApprovalRequest,
+    current_user: User = Depends(get_current_active_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์ดำเนินการ")
+
+    student = await User.get(payload.student_id)
+    if student:
+        changed = False
+        if current_user.id in student.following_tutors:
+            student.following_tutors.remove(current_user.id)
+            changed = True
+        if current_user.id in student.pending_tutors:
+            student.pending_tutors.remove(current_user.id)
+            changed = True
+
+        if changed:
+            await student.save()
+            return {"success": True}
+
+    raise HTTPException(status_code=404, detail="ไม่พบลูกศิษย์คนนี้")
+
+
+
 @router.get("/network")
 async def get_network(current_user: User = Depends(get_current_active_user)):
     if current_user.role == "admin":

@@ -718,6 +718,7 @@
             },
 
             switchAuthRole(role) {
+                state.authRole = role;
                 state.currentRole = role;
                 this.updateAvatar(role);
                 this.render();
@@ -842,6 +843,7 @@
                 state.isAuthenticated = false;
                 state.userRole = 'student';
                 state.currentRole = 'student';
+                state.authRole = 'student';
                 state.currentStudentId = null;
                 state.currentStudentName = '';
                 state.currentEmail = '';
