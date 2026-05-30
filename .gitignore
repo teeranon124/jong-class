@@ -46,3 +46,7 @@ node_modules/
 
 # Cython debug symbols
 cython_debug/
+
+
+.ruff_cache/
+.antigravitycli/
