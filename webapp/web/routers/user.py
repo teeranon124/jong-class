@@ -63,6 +63,8 @@ async def login_google(payload: GoogleLoginRequest):
         )
 
     # 2. Query/Register user
+    requested_role = payload.role or "student"
+    
     user = await User.find_one(User.email == email)
     if not user:
         # Generate random password (unused since they log in via Google)
@@ -72,7 +74,7 @@ async def login_google(payload: GoogleLoginRequest):
         user = User(
             email=email,
             password=get_password_hash(random_pass),
-            role=payload.role,
+            role=requested_role,
             name=name or email,
             status="active",
             avatar_url=picture,
@@ -89,6 +91,40 @@ async def login_google(payload: GoogleLoginRequest):
         if picture:
             user.avatar_url = picture
         await user.save()
+        
+        # Auto route to student shadow account if a tutor logs in as student
+        if user.role == "admin" and requested_role == "student":
+            shadow_email = f"student_{user.email}"
+            shadow_user = await User.find_one(
+                User.email == shadow_email, User.linked_tutor_id == user.id
+            )
+            
+            if not shadow_user:
+                random_pass = "".join(
+                    random.choices(string.ascii_letters + string.digits, k=32)
+                )
+                shadow_user = User(
+                    email=shadow_email,
+                    password=get_password_hash(random_pass),
+                    role="student",
+                    name=f"{user.name} (นักเรียน)",
+                    linked_tutor_id=user.id,
+                    avatar_url=user.avatar_url,
+                )
+                await shadow_user.insert()
+            else:
+                if picture:
+                    shadow_user.avatar_url = picture
+                    await shadow_user.save()
+            
+            # Switch target login user to shadow account
+            user = shadow_user
+            
+        elif user.role == "student" and requested_role == "admin":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="อีเมลนี้ลงทะเบียนเป็นบัญชีนักเรียนทั่วไปไว้แล้ว หากต้องการเป็นติวเตอร์กรุณาใช้อีเมลอื่น หรือติดต่อผู้ดูแลระบบครับ",
+            )
 
     # 3. Issue native JWT
     access_token = create_access_token(

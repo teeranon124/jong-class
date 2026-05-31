@@ -413,6 +413,7 @@
                             };
                             
                             state.currentTab = state.currentRole === 'admin' ? 'overview' : 'browse';
+                            this.updateAvatar(state.currentRole);
                         } else {
                             localStorage.removeItem("access_token");
                         }
@@ -876,8 +877,8 @@
                         }
                     });
                     
-                    const container = document.getElementById("google-signin-btn-container");
-                    if (container) {
+                    const containers = document.querySelectorAll(".google-signin-btn-container");
+                    containers.forEach(container => {
                         const screenWidth = window.innerWidth;
                         let btnWidth = 360; // Default width for larger screens
                         if (screenWidth < 480) {
@@ -888,7 +889,7 @@
                             container,
                             { theme: "outline", size: "large", width: btnWidth.toString(), shape: "pill" }
                         );
-                    }
+                    });
                 } catch (err) {
                     console.error("Google Sign-In initialization failed:", err);
                 }
@@ -1274,6 +1275,8 @@
                 const avatarBg = document.getElementById('user-avatar-bg');
                 const avatarText = document.getElementById('user-avatar-text');
                 const avatarImg = document.getElementById('user-avatar-img');
+                const modalImg = document.getElementById('modal-avatar-img');
+                const modalIcon = document.getElementById('modal-avatar-icon');
                 if (!avatarBg || !avatarText) return;
 
                 if (state.avatarUrl) {
@@ -1282,6 +1285,11 @@
                         avatarImg.classList.remove('hidden');
                     }
                     avatarText.classList.add('hidden');
+                    if (modalImg) {
+                        modalImg.src = state.avatarUrl;
+                        modalImg.classList.remove('hidden');
+                    }
+                    if (modalIcon) modalIcon.classList.add('hidden');
                 } else {
                     if (avatarImg) {
                         avatarImg.classList.add('hidden');
@@ -1292,8 +1300,10 @@
                         avatarText.innerText = 'ครู';
                     } else {
                         avatarBg.className = 'bg-secondary text-secondary-content rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft flex items-center justify-center';
-                        avatarText.innerText = 'น.ร.';
+                        avatarText.innerText = 'นร';
                     }
+                    if (modalImg) modalImg.classList.add('hidden');
+                    if (modalIcon) modalIcon.classList.remove('hidden');
                 }
             },
 
@@ -1510,7 +1520,7 @@
                                 <p class="leading-relaxed">เพื่อความปลอดภัยและสิทธิ์การเข้าใช้งานที่ถูกต้อง กรุณาเข้าสู่ระบบผ่าน <b>บัญชี Google ยืนยันตัวตนจริง</b></p>
                             </div>
                             
-                            <div id="google-signin-btn-container" class="mt-6 flex justify-center w-full min-h-[44px]"></div>
+                            <div class="google-signin-btn-container mt-6 flex justify-center w-full min-h-[44px]"></div>
                             
                             <div class="text-center mt-8 pt-6 border-t border-brand-100">
                                 <p class="text-sm text-neutral/60 font-medium">ยังไม่มีบัญชี? <button onclick="app.switchAuthView('register')" class="text-${cTheme} font-bold hover:underline ml-1 transition-colors">สมัครสมาชิก</button></p>
@@ -1567,7 +1577,7 @@
                                 <p class="leading-relaxed">เพื่อความปลอดภัยและป้องกันบัญชีปลอม ระบบเปิดรับการลงทะเบียนผ่าน <b>บัญชี Google ยืนยันตัวตนจริง เท่านั้น</b></p>
                             </div>
                             
-                            <div id="google-signin-btn-container" class="mt-6 flex justify-center w-full min-h-[44px]"></div>
+                            <div class="google-signin-btn-container mt-6 flex justify-center w-full min-h-[44px]"></div>
                             
                             <div class="text-center mt-8 pt-6 border-t border-brand-100">
                                 <p class="text-sm text-neutral/60 font-medium">มีบัญชีอยู่แล้ว? <button onclick="app.switchAuthView('login')" class="text-${cTheme} font-bold hover:underline ml-1 transition-colors">เข้าสู่ระบบ</button></p>

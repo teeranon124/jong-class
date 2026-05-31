@@ -50,3 +50,5 @@ cython_debug/
 
 .ruff_cache/
 .antigravitycli/
+
+scratch/

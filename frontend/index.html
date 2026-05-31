@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="cupcake">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TutorBooking - ระบบจองคลาสเรียน</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.11.1/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    
+    <script>
+        // Global Error Handler to catch and show errors on screen
+        window.onerror = function(msg, url, line, col, error) {
+            const content = document.getElementById('app-content');
+            if (content) {
+                content.innerHTML = `
+                    <div class="p-8 text-center bg-white rounded-[2rem] border border-error/20 shadow-sm mx-auto max-w-md mt-10">
+                        <div class="w-16 h-16 bg-error/10 text-error rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="alert-octagon" class="w-8 h-8"></i>
+                        </div>
+                        <h2 class="text-lg font-bold text-neutral mb-2">เกิดข้อผิดพลาดร้ายแรง</h2>
+                        <p class="text-xs text-neutral/50 font-mono mb-6">${msg}<br>at line ${line}:${col}</p>
+                        <button onclick="localStorage.clear(); location.reload();" class="btn btn-sm btn-error text-white rounded-full px-6">ล้างข้อมูลและลองใหม่</button>
+                    </div>
+                `;
+                if(window.lucide) lucide.createIcons({ root: content });
+            }
+            return false;
+        };
+
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Kanit', 'sans-serif'] },
+                    colors: {
+                        brand: { 50: '#fdf8f6', 100: '#f2e8e5', 200: '#e8d5d1', 500: '#65c3c8', 600: '#ef9fbc' }
+                    },
+                    boxShadow: {
+                        'soft': '0 10px 40px -10px rgba(101,195,200,0.15)',
+                        'card': '0 4px 20px -2px rgba(0,0,0,0.05)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e8d5d1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        
+        /* แก้ไขสีเวลากดลากคลุมข้อความให้ชัดเจนขึ้น */
+        ::selection { background-color: #ef9fbc; color: white; }
+        ::-moz-selection { background-color: #ef9fbc; color: white; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        @keyframes pulse-red { 0%, 100% { color: #f87171; } 50% { color: #b91c1c; } }
+        .timer-danger { animation: pulse-red 1s infinite; font-weight: bold; }
+    </style>
+</head>
+<body class="min-h-screen bg-[#faf7f5] flex flex-col font-sans text-base-content selection:bg-primary selection:text-white pb-16 md:pb-0">
+
+    <!-- Top Navbar -->
+    <nav class="navbar bg-base-100/90 backdrop-blur-md border-b border-brand-100 sticky top-0 z-50 px-4 shadow-sm">
+        <div class="flex-1">
+            <div class="flex items-center gap-2">
+                <div class="bg-gradient-to-br from-primary to-secondary p-1.5 rounded-xl text-white shadow-soft">
+                    <i data-lucide="graduation-cap" class="w-6 h-6"></i>
+                </div>
+                <span id="brand-name" class="text-xl font-bold text-neutral tracking-wide hidden sm:inline">TutorBooking</span>
+            </div>
+        </div>
+        <div class="flex-none gap-1 sm:gap-2">
+            <select id="role-selector" style="display: none;" class="select select-bordered select-xs sm:select-sm bg-white border-brand-200 text-neutral font-medium text-xs rounded-full focus:ring-primary w-[85px] sm:w-auto px-1 sm:px-3" onchange="app.switchRole(this.value)">
+                <option value="admin">ครู</option>
+                <option value="student">นักเรียน</option>
+            </select>
+
+            <!-- ปุ่มจัดการแพ็กเกจที่แยกออกมา -->
+            <button id="plan-btn" class="btn btn-circle btn-xs sm:btn-sm bg-warning/10 hover:bg-warning hover:text-white border-none text-warning hidden transition-colors shadow-sm" onclick="app.switchTab('subscription')" title="จัดการแพ็กเกจ">
+                <i data-lucide="zap" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+            </button>
+
+            <!-- ปรับปุ่มให้มีสีสันที่สังเกตง่าย ไม่กลืนกับพื้นหลัง -->
+            <button id="settings-btn" class="btn btn-circle btn-xs sm:btn-sm bg-primary/10 hover:bg-primary hover:text-white border-none text-primary hidden transition-colors shadow-sm" onclick="app.switchTab('settings')" title="ตั้งค่าระบบ">
+                <i data-lucide="settings" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+            </button>
+
+            <button id="logout-btn" class="btn btn-circle btn-xs sm:btn-sm bg-error/10 hover:bg-error hover:text-white border-none text-error hidden transition-colors shadow-sm" onclick="app.logout()" title="ออกจากระบบ">
+                <i data-lucide="log-out" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+            </button>
+
+            <!-- คลิกที่รูปโปรไฟล์/Avatar เพื่อดูและอัปเดตโปรไฟล์ส่วนตัว -->
+            <div id="profile-trigger" class="avatar ml-0.5 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-300 hidden" onclick="app.showProfileModal()" title="โปรไฟล์ส่วนตัว">
+                <div id="user-avatar-bg" class="rounded-full w-8 h-8 sm:w-9 sm:h-9 shadow-soft overflow-hidden flex items-center justify-center bg-primary text-primary-content">
+                    <img id="user-avatar-img" class="w-full h-full object-cover hidden" src="" alt="Google Profile" />
+                    <span id="user-avatar-text" class="text-[10px] sm:text-xs">ครู</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Desktop Nav -->
+    <div id="desktop-nav" class="hidden md:flex justify-center bg-base-100/80 backdrop-blur-md border-b border-brand-100 sticky top-[64px] z-40 px-4 py-3 gap-2"></div>
+
+    <!-- Hidden file input for quick upload -->
+    <input type="file" id="quick-upload-input" class="hidden" accept="image/*" onchange="app.handleQuickUpload(this)" />
+
+    <!-- Main Content -->
+    <main id="app-content" class="container mx-auto px-4 py-6 flex-grow max-w-3xl flex flex-col"></main>
+
+    <!-- Mobile Nav -->
+    <div id="mobile-nav" class="btm-nav btm-nav-sm md:hidden z-40 bg-base-100 border-t border-brand-100 pb-safe rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.05)]"></div>
+
+    <!-- Modals -->
+    <!-- Slip View Modal -->
+    <dialog id="slip_modal" class="modal modal-bottom sm:modal-middle z-50">
+        <div class="modal-box p-0 overflow-hidden bg-base-200 rounded-[2rem]">
+            <div class="bg-base-100 p-4 flex justify-between items-center border-b border-base-200">
+                <h3 class="font-bold text-lg text-neutral flex items-center gap-2"><i data-lucide="file-image" class="w-5 h-5 text-primary"></i> หลักฐานการโอนเงิน</h3>
+                <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost"><i data-lucide="x" class="w-4 h-4"></i></button></form>
+            </div>
+            <div class="p-4 flex justify-center bg-base-200">
+                <img id="slip_image" src="" alt="Slip" class="max-h-[60vh] object-contain rounded-lg shadow-sm" />
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Slip Upload Modal -->
+    <dialog id="upload_modal" class="modal modal-bottom sm:modal-middle z-50">
+        <div class="modal-box rounded-[2rem]">
+            <div class="flex items-center gap-2 mb-4 text-neutral">
+                <div class="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                    <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                </div>
+                <h3 class="font-bold text-lg">แนบหลักฐานการโอนเงิน</h3>
+            </div>
+            
+            <!-- Bank Details Injected Here -->
+            <div id="upload_bank_info" class="bg-white rounded-[1.75rem] p-5 mb-5 border border-brand-100 text-left shadow-sm relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-24 h-24 bg-primary/5 rounded-full translate-x-8 -translate-y-8 pointer-events-none"></div>
+                <div class="relative z-10 space-y-3">
+                    <div class="text-[10px] font-bold text-neutral/40 uppercase tracking-[0.22em]">โอนเงินไปที่</div>
+                    <div class="space-y-0.5">
+                        <div class="text-[13px] sm:text-sm font-semibold text-primary leading-tight" id="ubank-name"></div>
+                        <div class="text-sm sm:text-[15px] font-bold text-neutral leading-tight" id="ubank-acc-name"></div>
+                    </div>
+                    <div class="flex items-end justify-between gap-3 pt-1">
+                        <div class="font-mono text-[22px] sm:text-[26px] font-black tracking-[0.22em] text-neutral leading-none" id="ubank-acc-num"></div>
+                        <button onclick="app.copyToClipboard(document.getElementById('ubank-acc-num').innerText)" class="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-brand-100 bg-white px-3.5 py-2 text-sm font-semibold text-primary shadow-sm active:scale-95">
+                            <i data-lucide="copy" class="w-4 h-4"></i>
+                            คัดลอก
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-2 border-dashed border-primary/50 bg-primary/5 rounded-2xl p-6 text-center cursor-pointer hover:bg-primary/10 transition-colors" onclick="document.getElementById('fake_file_input').click()">
+                <i data-lucide="image-plus" class="w-10 h-10 text-primary/60 mx-auto mb-2"></i>
+                <div class="text-sm font-medium text-primary" id="upload_text">คลิกเพื่อเลือกไฟล์สลิปจากอัลบั้ม</div>
+                <input type="file" id="fake_file_input" class="hidden" accept="image/*" onchange="app.handleFileSelect(event)" />
+            </div>
+            <div class="modal-action mt-6">
+                <form method="dialog" class="flex-1"><button class="btn btn-ghost w-full rounded-full border-brand-200 font-medium">ยกเลิก</button></form>
+                <button class="btn btn-primary flex-1 rounded-full text-white shadow-soft font-medium" onclick="app.confirmUpload()">ยืนยันส่งสลิป</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Confirmation Modal -->
+    <dialog id="confirm_modal" class="modal modal-bottom sm:modal-middle z-50">
+        <div class="modal-box rounded-3xl p-6 text-center max-w-sm mx-auto overflow-hidden">
+            <div class="absolute -top-10 -right-10 w-32 h-32 bg-base-200 rounded-full opacity-50 pointer-events-none"></div>
+            <div class="absolute -bottom-10 -left-10 w-24 h-24 bg-base-200 rounded-full opacity-50 pointer-events-none"></div>
+            
+            <div class="relative z-10">
+                <div id="confirm_icon_container" class="mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-4 transition-colors">
+                    <i id="confirm_icon" data-lucide="alert-circle" class="w-8 h-8"></i>
+                </div>
+                
+                <h3 id="confirm_title" class="font-bold text-xl mb-2 text-neutral">ยืนยันการดำเนินการ</h3>
+                <p id="confirm_message" class="text-sm text-base-content/70 mb-8 px-2">คุณต้องการดำเนินการนี้ใช่หรือไม่?</p>
+                
+                <div class="flex gap-3 w-full">
+                    <form method="dialog" class="flex-1">
+                        <button class="btn btn-ghost w-full rounded-full bg-base-200 hover:bg-base-300 font-medium">ยกเลิก</button>
+                    </form>
+                    <button id="confirm_btn" class="btn flex-1 rounded-full text-white shadow-md border-none font-medium transition-transform active:scale-95" onclick="app.executeConfirm()">ยืนยัน</button>
+                </div>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Edit Class Modal -->
+    <dialog id="edit_class_modal" class="modal modal-bottom sm:modal-middle z-50">
+        <div class="modal-box p-0 overflow-hidden bg-base-200 rounded-[2rem] flex flex-col max-h-[85vh]">
+            <div class="bg-base-100 p-4 flex justify-between items-center border-b border-base-200 shrink-0">
+                <h3 class="font-bold text-lg text-neutral flex items-center gap-2"><i data-lucide="edit-3" class="w-5 h-5 text-primary"></i> แก้ไขคอร์สเรียน</h3>
+                <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost"><i data-lucide="x" class="w-4 h-4"></i></button></form>
+            </div>
+            <div class="p-6 bg-base-100 space-y-4 overflow-y-auto grow">
+                <div class="form-control w-full">
+                    <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">ชื่อคอร์สเรียน / หัวข้อ</span></label>
+                    <input type="text" id="edit-title" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 border-t border-brand-100 pt-4 mt-2">
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span class="label-text text-xs font-bold text-primary">วันเปิดรับสมัคร</span></label>
+                        <input type="date" id="edit-open-date" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                    </div>
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span class="label-text text-xs font-bold text-error">วันปิดรับสมัคร</span></label>
+                        <input type="date" id="edit-close-date" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                    </div>
+                </div>
+
+                <div class="mb-3 pt-4 border-t border-brand-100">
+                    <label class="label pt-0"><span class="label-text text-xs font-bold text-secondary">วันที่ทำการสอน (ระบุได้หลายวัน)</span></label>
+                    <div class="grid grid-cols-12 gap-1 mb-1 px-1 text-[10px] font-bold text-neutral/50">
+                        <div class="col-span-1 text-center">ครั้ง</div><div class="col-span-4">วันที่</div><div class="col-span-3">เริ่ม</div><div class="col-span-3">สิ้นสุด</div>
+                    </div>
+                    <div id="edit-schedule-container" class="max-h-[30vh] overflow-y-auto pr-1">
+                        <!-- schedules injected here -->
+                    </div>
+                    <button type="button" onclick="app.addScheduleRow('edit-schedule-container')" class="btn btn-xs btn-outline btn-primary rounded-full mt-2 w-full border-dashed"><i data-lucide="plus" class="w-3 h-3"></i> เพิ่มวันเรียน</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 pt-4 border-t border-brand-100">
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">จำนวนที่รับ (คน)</span></label>
+                        <input type="number" id="edit-seats" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                    </div>
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">ราคา (บาท/คน)</span></label>
+                        <input type="number" id="edit-price" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-base-100 border-t border-brand-100 flex gap-3 shrink-0">
+                <form method="dialog" class="flex-1"><button class="btn btn-ghost w-full rounded-full border border-brand-200 font-medium">ยกเลิก</button></form>
+                <button class="btn btn-primary flex-1 rounded-full text-white shadow-soft font-medium" onclick="app.saveEditClass()">บันทึกการแก้ไข</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Profile Edit Modal -->
+    <dialog id="profile_modal" class="modal modal-bottom sm:modal-middle z-50">
+        <div class="modal-box rounded-[2rem] bg-base-100 max-w-sm p-6 relative">
+            <div class="flex items-center gap-3 mb-4 text-neutral">
+                <div id="modal-avatar-bg" class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-info/10 text-info">
+                    <img id="modal-avatar-img" class="w-full h-full object-cover hidden" src="" alt="Google Profile" />
+                    <i id="modal-avatar-icon" data-lucide="user" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg leading-tight">โปรไฟล์ส่วนตัว</h3>
+                    <p class="text-[10px] text-neutral/40 font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-success"></span> เชื่อมต่อ Google แล้ว</p>
+                </div>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="form-control w-full">
+                    <label class="label pt-0"><span class="label-text text-xs font-bold text-neutral/70">ชื่อจริง/ชื่อแสดงผล (Name)</span></label>
+                    <input type="text" id="profile-username" class="input input-bordered input-sm w-full bg-brand-50 rounded-xl h-10" />
+                </div>
+            </div>
+
+            <div class="modal-action mt-6 flex gap-3">
+                <form method="dialog" class="flex-1"><button class="btn btn-ghost w-full rounded-full border-brand-200 font-medium">ยกเลิก</button></form>
+                <button class="btn btn-info flex-1 rounded-full text-white shadow-soft font-medium" onclick="app.saveProfile()">บันทึกข้อมูล</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Toast Notification -->
+    <div id="toast-container" class="toast toast-top toast-center z-[100] mt-16 w-full max-w-sm px-4 pointer-events-none flex flex-col gap-2"></div>
+
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
